@@ -1,7 +1,12 @@
-import streamlit as st
-st.set_page_config(page_title="Purdue University Minor Optimizer", page_icon="🎓")
-from scraper import get_minors_requirements, get_minor_list, _get_requirements_from_minor_page
 import re
+from scraper import (
+    get_minor_list,
+    _get_requirements_from_minor_page,
+)
+import streamlit as st
+
+st.set_page_config(page_title="Purdue University Minor Optimizer", page_icon="🎓")
+
 
 def assign_remaining_courses(remaining, current_semester, per_semester=4):
     """
