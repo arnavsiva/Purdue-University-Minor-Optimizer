@@ -5,7 +5,18 @@ from scraper import (
 )
 import streamlit as st
 
-st.set_page_config(page_title="Purdue University Minor Optimizer", page_icon="🎓")
+st.set_page_config(
+    page_title="Purdue University Minor Optimizer",
+    page_icon="🎓",
+    menu_items={
+        "About": \
+            "**Arnav Sivakumar**  \n"
+            "CS Student @ Purdue University  \n\n"
+            "Made this app to explore optimizing overlapping minors and for fun.  \n\n"
+            "Website: https://arnavsivakumar.com  \n"
+            "LinkedIn: https://www.linkedin.com/in/arnavsivakumar/  \n"
+    }
+)
 
 
 def assign_remaining_courses(remaining, current_semester, per_semester=4):
@@ -38,7 +49,7 @@ def main():
     st.title("Purdue Minor Recommender")
     st.write("Enter your completed courses and current semester to find the best minors you can pursue based on overlap and remaining requirements.")
 
-    # Sidebar: your current semester
+    # Sidebar — user information input and course management
     st.sidebar.header("Your Information")
     semester = st.sidebar.selectbox(
         "Current semester for scheduling remaining courses",
