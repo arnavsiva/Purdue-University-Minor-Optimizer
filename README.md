@@ -18,7 +18,7 @@ A Streamlit application that recommends Purdue University minors based on your c
 
 1. Clone the repository:
    ```powershell
-   git clone [<repo-url>](https://github.com/arnavsiva/Purdue-Easy-Minor-Degree-Planner)
+   git clone https://github.com/arnavsiva/Purdue-Easy-Minor-Degree-Planner
    ```
 
 2. Install dependencies:
