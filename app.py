@@ -1,9 +1,11 @@
+import math
 import re
 
 import streamlit as st
 
 from scraper import (
     _get_requirements_from_minor_page,
+    get_majors_list,
     get_minor_list,
 )
 
@@ -48,7 +50,14 @@ def main():
 
     def clear_all():
         st.session_state.courses = []
+        # reset optimization flag and inputs
         st.session_state.optimize = False
+        # reset semester and major selections
+        st.session_state.current_sem = 1
+        st.session_state.major = "None"
+        # clear input fields
+        st.session_state.clear_input = False
+        st.session_state.clear_external = False
 
     st.title("Purdue Minor Recommender")
     st.write(
@@ -57,8 +66,20 @@ def main():
 
     # Sidebar — user information input and course management
     st.sidebar.header("Your Information")
+    # select current major (to avoid recommending the same minor)
+    majors = get_majors_list()
+    major_options = ["None"] + majors
+    if "major" not in st.session_state:
+        st.session_state.major = "None"
+    st.sidebar.selectbox(
+        "Current major (optional)",
+        major_options,
+        index=0,
+        key="major",
+        on_change=reset_optimize,
+    )
     semester = st.sidebar.selectbox(
-        "Current semester for scheduling remaining courses",
+        "Current semester",
         options=list(range(1, 9)),
         index=0,
         key="current_sem",
@@ -76,7 +97,8 @@ def main():
     # form to add courses in bulk
     with st.sidebar.form("add_courses_form"):
         new_input = st.text_input(
-            "Type all your courses (separated by commas)", key="new_courses_input"
+            "Type all your courses taken at Purdue (separated by commas)",
+            key="new_courses_input",
         )
         add_btn = st.form_submit_button("Add Courses", on_click=reset_optimize)
     if add_btn and new_input:
@@ -151,7 +173,7 @@ def main():
             with cols[1]:
                 st.button("🗑️", key=f"del_{idx}", on_click=delete_course, args=(idx,))
         # button to clear all entered courses
-        st.sidebar.button("🧹 Clear All Courses", on_click=clear_all)
+        st.sidebar.button("🧹 Reset Inputs", on_click=clear_all)
 
     # build taken set from stored courses
     taken = {c["code"] for c in st.session_state.courses}
@@ -179,10 +201,12 @@ def main():
         for name, link in get_minor_list():
             status.text(f"Loading requirements for {name}...")
             try:
-                sections = _get_requirements_from_minor_page(link)
+                sections, notes = _get_requirements_from_minor_page(link)
             except Exception:
-                sections = {}
-            minors_data.append({"name": name, "link": link, "sections": sections})
+                sections, notes = {}, []
+            minors_data.append(
+                {"name": name, "link": link, "sections": sections, "notes": notes}
+            )
         status.empty()
 
     # compute recommendations
@@ -194,6 +218,7 @@ def main():
             link = minor["link"]
             status.text(f"Checking {name} minor...")
             sections = minor["sections"]
+            notes = minor.get("notes", [])
             # calculate per-section requirements
             # flatten codes (including nested OR groups) into a single list
             raw_codes = []
@@ -257,6 +282,7 @@ def main():
                     "taken_codes": taken_codes,
                     "pending_sections": pending_sections,
                     "sections": sections,
+                    "notes": notes,
                     "total": total,
                     "completed": completed,
                     "percent": percent,
@@ -264,6 +290,10 @@ def main():
             )
         status.empty()
 
+    # filter out any minor matching the user's current major
+    if st.session_state.get("major") and st.session_state.major != "None":
+        filter_name = f"{st.session_state.major} Minor"
+        results = [r for r in results if r["name"] != filter_name]
     # sort by number of courses completed desc
     results = sorted(results, key=lambda x: x["percent"], reverse=True)
 
@@ -276,15 +306,33 @@ def main():
 
     for r in results:
         st.markdown(f"### {r['name']}")
-        st.markdown(f"[View catalog page]({r['link']})")
-        st.write(
-            f"Progress: {r['completed']} / {r['total']} courses completed ({r['percent']:.1f}%)"
+        st.markdown(f"[View catalog page]({r['link']})  ")  # two spaces for newline
+        st.markdown("---")  # separator between minors
+        notes = r.get("notes", [])
+        if notes:
+            notes_md = "**Notes:**\n" + "\n".join(f"- {note}" for note in notes)
+            st.markdown(notes_md)
+        st.markdown(
+            f"**Progress:** {r['completed']} / {r['total']} courses completed ({r['percent']:.1f}%)"
         )
-        # show courses already taken (formatted LETTER SPACE NUMBER)
+        # Purdue residency requirement
+        req_pcnt = None
+        for note in notes:
+            m = re.search(r"(\d+)%", note)
+            if m:
+                req_pcnt = int(m.group(1))
+                break
+        if req_pcnt:
+            req_courses = math.ceil(r["total"] * req_pcnt / 100)
+            allowed_ext = r["total"] - req_courses
+            st.markdown(
+                f"**Residency requirement:** At least {req_courses}/{r['total']} courses at Purdue ({req_pcnt}%), up to {allowed_ext} external."
+            )
+        # show courses already taken
         taken_fmt = [re.sub(r"([A-Za-z]+)(\d+)", r"\1 \2", c) for c in r["taken_codes"]]
-        st.write("Courses already taken:", ", ".join(taken_fmt))
-        # show pending courses by category
-        st.write("Pending requirements:")
+        st.markdown("**Courses already taken:**\n- " + "\n- ".join(taken_fmt))
+        # pending requirements
+        st.markdown("**Pending requirements:**")
         for sec, pending in r["pending_sections"].items():
             # clean up section title spacing around hyphens
             sec_clean = re.sub(r"\s*-\s*", " - ", sec).strip()
@@ -313,9 +361,10 @@ def main():
                     pending_fmt = [
                         re.sub(r"([A-Za-z]+)(\d+)", r"\1 \2", c) for c in pending
                     ]
-                    st.write(f"**{sec_clean}:** {', '.join(pending_fmt)}")
+                    st.markdown(f"**{sec_clean}:** {', '.join(pending_fmt)}")
                 else:
-                    st.write(f"**{sec_clean}:** All completed")
+                    st.markdown(f"**{sec_clean}:** All completed")
+        st.markdown("---")  # end of minor
 
 
 if __name__ == "__main__":
