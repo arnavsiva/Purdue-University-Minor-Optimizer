@@ -13,31 +13,20 @@ st.set_page_config(
     page_title="Purdue University Minor Optimizer",
     page_icon="🎓",
     menu_items={
-        "About": "**Arnav Sivakumar**  \n"
-        "CS Student @ Purdue University  \n\n"
-        "Made this app to explore optimizing overlapping minors and for fun.  \n\n"
-        "Website: https://arnavsivakumar.com  \n"
-        "LinkedIn: https://www.linkedin.com/in/arnavsivakumar/  \n"
+        "About": (
+            "**Arnav Sivakumar**  \n"
+            "CS Student @ Purdue University  \n\n"
+            "Made this app to explore optimizing overlapping minors and for fun.  \n\n"
+            "Website: https://arnavsivakumar.com  \n"
+            "LinkedIn: https://www.linkedin.com/in/arnavsivakumar/  \n"
+            "Open Source: https://github.com/arnavsiva/Purdue-University-Minor-Optimizer  \n"
+        )
     },
 )
 
 
-def assign_remaining_courses(remaining, current_semester, per_semester=4):
-    """
-    Assign remaining courses into future semesters in chunks of size per_semester.
-    Returns a dict mapping semester number to list of courses.
-    """
-    schedule = {}
-    sem = current_semester + 1
-    for i in range(0, len(remaining), per_semester):
-        chunk = remaining[i : i + per_semester]
-        schedule[f"Semester {sem}"] = chunk
-        sem += 1
-    return schedule
-
-
 def main():
-    # callbacks to manage optimization flag, deletion, and clearing all courses
+    # Reset optimization flag
     def reset_optimize():
         st.session_state.optimize = False
 
@@ -59,12 +48,14 @@ def main():
         st.session_state.clear_input = False
         st.session_state.clear_external = False
 
-    st.title("Purdue Minor Recommender")
+    st.title("Purdue Minor Recommender v0.1.0")
     st.write(
-        "Enter your completed courses and current semester to find the best minors you can pursue based on overlap and remaining requirements."
+        "Enter your completed courses and current semester to find the best minors you can pursue based on overlap and remaining requirements.\n\n"
+        "This app is an open source project by Arnav Sivakumar, a CS student at Purdue University. It uses the [Purdue Course Catalog](https://catalog.purdue.edu/) to scrape minor requirements and compute recommendations based on your completed coursework.\n\n"
+        "It is still in development, so please report any issues or suggestions on the [GitHub repository](https://github.com/arnavsiva/Purdue-University-Minor-Optimizer)"
     )
 
-    # Sidebar — user information input and course management
+    # Sidebar - user information input and course management
     st.sidebar.header("Your Information")
     # select current major (to avoid recommending the same minor)
     majors = get_majors_list()
@@ -145,39 +136,72 @@ def main():
         # schedule external input clear and rerun
         st.session_state.clear_external = True
         st.rerun()
-
-    # add spacing after input forms
-    st.sidebar.write("")
+    # Experiences: allow marking Study Abroad or International Internship
+    st.sidebar.header("Experiences")
+    st.sidebar.checkbox("Study Abroad", key="study_abroad", on_change=reset_optimize)
+    st.sidebar.checkbox(
+        "International Internship", key="intl_internship", on_change=reset_optimize
+    )
 
     # list and manage added courses
     if st.session_state.courses:
         st.sidebar.markdown("**Your Courses:**")
-        for idx, course in enumerate(st.session_state.courses):
-            code = course["code"]
-            origin = course.get("origin", "purdue")
-            cols = st.sidebar.columns([3, 1])
-            with cols[0]:
-                # format code
-                code_fmt = re.sub(r"([A-Za-z]+)(\d+)", r"\1 \2", code)
-                if origin == "purdue":
+        # prepare sorted indices for Purdue and External courses
+        purdue_idxs = sorted(
+            [
+                i
+                for i, c in enumerate(st.session_state.courses)
+                if c.get("origin", "purdue") == "purdue"
+            ],
+            key=lambda i: st.session_state.courses[i]["code"],
+        )
+        external_idxs = sorted(
+            [
+                i
+                for i, c in enumerate(st.session_state.courses)
+                if c.get("origin") == "external"
+            ],
+            key=lambda i: st.session_state.courses[i]["code"],
+        )
+        # display Purdue courses first
+        if purdue_idxs:
+            st.sidebar.markdown("*Purdue Courses:*")
+            for idx in purdue_idxs:
+                course = st.session_state.courses[idx]
+                code_fmt = re.sub(r"([A-Za-z]+)(\d+)", r"\1 \2", course["code"])
+                cols = st.sidebar.columns([3, 1])
+                with cols[0]:
                     sem_val = st.selectbox(
-                        f"Semester taken for {code_fmt} (Purdue)",
+                        f"Semester taken for {code_fmt}",
                         options=list(range(1, semester + 1)),
                         key=f"sem_{idx}",
                         index=(course.get("sem", 1) - 1),
                         on_change=reset_optimize,
                     )
                     st.session_state.courses[idx]["sem"] = sem_val
-                else:
+                with cols[1]:
+                    st.button(
+                        "🗑️", key=f"del_{idx}", on_click=delete_course, args=(idx,)
+                    )
+        # then External courses
+        if external_idxs:
+            st.sidebar.markdown("*External Courses:*")
+            for idx in external_idxs:
+                course = st.session_state.courses[idx]
+                code_fmt = re.sub(r"([A-Za-z]+)(\d+)", r"\1 \2", course["code"])
+                cols = st.sidebar.columns([3, 1])
+                with cols[0]:
                     st.markdown(f"**{code_fmt}** (External)")
-            with cols[1]:
-                st.button("🗑️", key=f"del_{idx}", on_click=delete_course, args=(idx,))
+                with cols[1]:
+                    st.button(
+                        "🗑️", key=f"del_{idx}", on_click=delete_course, args=(idx,)
+                    )
         # button to clear all entered courses
         st.sidebar.button("🧹 Reset Inputs", on_click=clear_all)
 
     # build taken set from stored courses
     taken = {c["code"] for c in st.session_state.courses}
-    # add spacing before optimization section
+    # add spacing after input forms
     st.sidebar.write("")
     # optimization trigger
     st.sidebar.header("Optimization")
@@ -215,6 +239,8 @@ def main():
         results = []
         for minor in minors_data:
             name = minor["name"]
+            # derive department prefix (first 4 letters) for level-based logic
+            dept_prefix = name.split()[0][:4].upper()
             link = minor["link"]
             status.text(f"Checking {name} minor...")
             sections = minor["sections"]
@@ -228,22 +254,109 @@ def main():
                         raw_codes.extend(group)
                 else:
                     raw_codes.extend(codes)
-            # find taken codes intersecting required set
-            taken_codes = sorted(set(raw_codes) & taken)
-            if not taken_codes:
+            # filter to valid course codes only (exclude descriptive text)
+            import re as _re
+
+            code_pattern = _re.compile(r"^[A-Z]{2,4}\d{3,5}$")
+            total_req = 0
+            completed_req = 0
+            taken_codes = []
+            # iterate each section to compute required selections
+            for sec, codes_list in sections.items():
+                # filter valid course codes
+                sec_codes = [c for c in codes_list if code_pattern.match(c)]
+                # handle level-based requirements: count courses taken at/above level threshold
+                if "level" in sec.lower():
+                    # parse level threshold and credits
+                    m_thr = re.search(r"(\d+)\s*Level", sec, re.IGNORECASE)
+                    level_threshold = int(m_thr.group(1)) if m_thr else 0
+                    m_cred = re.search(r"\((\d+)\s+credits?", sec, re.IGNORECASE)
+                    credits = int(m_cred.group(1)) if m_cred else 0
+                    req_level = max(1, credits // 3)
+                    total_req += req_level
+                    # count taken courses for this minor’s department at or above threshold
+                    taken_level = 0
+                    for c in taken:
+                        if c.startswith(dept_prefix):
+                            num = int(re.match(r"[A-Za-z]+(\d+)", c).group(1))
+                            if num >= level_threshold:
+                                taken_level += 1
+                                taken_codes.append(c)
+                    completed_req += min(taken_level, req_level)
+                    continue
+                if not sec_codes:
+                    continue  # skip sections without actual course codes
+                lower = sec.lower()
+                # determine number of selections required
+                if "choose" in lower:
+                    m = re.search(r"choose\s+(\d+)", lower)
+                    if m:
+                        req = int(m.group(1))
+                    else:
+                        # fallback to credit parsing
+                        m2 = re.search(
+                            r"\((\d+)(?:-\d+)?\s+credits?", sec, re.IGNORECASE
+                        )
+                        credits = int(m2.group(1)) if m2 else 3
+                        req = max(1, credits // 3)
+                else:
+                    # parse credit parentheses for mandatory sections
+                    m3 = re.search(r"\((\d+)(?:-\d+)?\s+credits?", sec, re.IGNORECASE)
+                    if m3:
+                        credits = int(m3.group(1))
+                        req = max(1, credits // 3)
+                    else:
+                        # default: need all listed courses
+                        req = len(sec_codes)
+                # count how many taken in this section
+                taken_in_sec = len(set(sec_codes) & taken)
+                # accumulate
+                total_req += req
+                completed_req += min(taken_in_sec, req)
+                # collect taken codes overall
+                taken_codes.extend(set(sec_codes) & taken)
+            if total_req == 0:
                 continue
-            total = len(raw_codes)
-            completed = len(taken_codes)
-            percent = (completed / total) * 100 if total else 0
+            # skip minors with no completed courses
+            if completed_req == 0:
+                continue
+            completed = completed_req
+            total = total_req
+            percent = (completed / total) * 100
             # compute pending courses per section, disallow reusing chosen courses for multiple choose-one sections
             available_taken = set(taken_codes)
             pending_sections = {}
             for sec, codes in sections.items():
+                # normalize section title
                 lower = sec.lower()
-                codes_set = set(codes)
-                if "choose" in lower:
+                # level-based requirements (e.g., “20000 Level or Above”): compute remaining courses
+                if "level" in lower:
+                    # parse level threshold and credits
+                    m_lvl = re.search(r"(\d+)\s*Level", sec, re.IGNORECASE)
+                    level_threshold = int(m_lvl.group(1)) if m_lvl else 20000
+                    m_cred = re.search(r"\((\d+)\s+credits?", sec, re.IGNORECASE)
+                    credits = int(m_cred.group(1)) if m_cred else 0
+                    req_cnt = max(1, credits // 3)
+                    # count taken courses for this department at or above threshold
+                    taken_level = sum(
+                        1
+                        for c in taken
+                        if c.startswith(dept_prefix)
+                        and int(re.match(r"[A-Za-z]+(\d+)", c).group(1))
+                        >= level_threshold
+                    )
+                    remaining = max(0, req_cnt - taken_level)
+                    pending_sections[sec] = remaining
+                    continue
+                # descriptive or instruction-only sections (no course codes)
+                if not codes or all(not code_pattern.match(c) for c in codes):
+                    pending_sections[sec] = None
+                    continue
+                # treat explicit 'choose' or credit-based requirements as choose-X
+                if "choose" in lower or re.search(
+                    r"\(\d+\s+credits", sec, re.IGNORECASE
+                ):
                     # parse how many courses to select
-                    # try numeric e.g. 'choose 2'
                     m = re.search(r"choose\s+(\d+)", lower)
                     if m:
                         req = int(m.group(1))
@@ -263,18 +376,67 @@ def main():
                         m3 = re.search(r"\((\d+)\s+credits", sec, re.IGNORECASE)
                         credits = int(m3.group(1)) if m3 else 3
                         req = max(1, credits // 3)
-                    chosen = available_taken & codes_set
-                    if len(chosen) >= req:
-                        # section fulfilled: consume chosen courses
-                        for sel in list(chosen)[:req]:
-                            available_taken.remove(sel)
+                    # prepare set of valid codes for this section, excluding placeholder codes ending in '000'
+                    codes_set = set(
+                        [
+                            c
+                            for c in codes
+                            if code_pattern.match(c) and not c.endswith("0000")
+                        ]
+                    )
+                    chosen_list = list(available_taken & codes_set)
+                    # consume only up to the required number, leave extras for D.1
+                    for sel in chosen_list[:req]:
+                        available_taken.discard(sel)
+                    if len(chosen_list) >= req:
+                        # section fully satisfied
                         pending_sections[sec] = []
                     else:
-                        # still need to pick courses: show only untaken options
-                        pending_sections[sec] = [c for c in codes if c not in taken]
+                        # still need to pick courses: list remaining options
+                        pending_sections[sec] = [
+                            c
+                            for c in codes
+                            if c not in taken and not c.endswith("0000")
+                        ]
                 else:
                     # standard section: pending are those not taken
-                    pending_sections[sec] = [c for c in codes if c not in taken]
+                    pending_sections[sec] = [
+                        c for c in codes if c not in taken and not c.endswith("0000")
+                    ]
+            # special-case Additional Course from Section B or C (D.1)
+            for sec, codes in sections.items():
+                if sec.strip().startswith("D. 1."):
+                    # choose-1 additional course from Section B or top-level C
+                    bc_codes = []
+                    for k, opts in sections.items():
+                        if k.startswith("B.") or (
+                            k.startswith("C.") and not re.match(r"C\.\s*\d", k)
+                        ):
+                            bc_codes.extend([c for c in opts if code_pattern.match(c)])
+                    # treat as a 'choose 1' from B/C using any remaining available_taken
+                    chosen = set(bc_codes) & available_taken
+                    if chosen:
+                        pending_sections[sec] = []
+                    else:
+                        # list all options not yet taken
+                        pending_sections[sec] = [c for c in bc_codes if c not in taken]
+                    continue
+            # special-case International Experience (D.2)
+            for sec, codes in sections.items():
+                if sec.strip().startswith("D. 2."):
+                    # separate explicit course codes and descriptive options
+                    explicit_codes = [c for c in codes if code_pattern.match(c)]
+                    descriptive = [c for c in codes if not code_pattern.match(c)]
+                    # start with unmet explicit codes
+                    pending = [c for c in explicit_codes if c not in taken]
+                    # include descriptive options if user hasn't covered experience
+                    if not (
+                        st.session_state.get("study_abroad")
+                        or st.session_state.get("intl_internship")
+                    ):
+                        pending.extend(descriptive)
+                    pending_sections[sec] = pending
+                    continue
             results.append(
                 {
                     "name": name,
@@ -305,13 +467,10 @@ def main():
     st.write(f"{len(results)} minors match your completed coursework:")
 
     for r in results:
+        st.markdown("---")  # separator before minor header
         st.markdown(f"### {r['name']}")
         st.markdown(f"[View catalog page]({r['link']})  ")  # two spaces for newline
-        st.markdown("---")  # separator between minors
-        notes = r.get("notes", [])
-        if notes:
-            notes_md = "**Notes:**\n" + "\n".join(f"- {note}" for note in notes)
-            st.markdown(notes_md)
+        # Display progress immediately after catalog link
         st.markdown(
             f"**Progress:** {r['completed']} / {r['total']} courses completed ({r['percent']:.1f}%)"
         )
@@ -333,38 +492,102 @@ def main():
         st.markdown("**Courses already taken:**\n- " + "\n- ".join(taken_fmt))
         # pending requirements
         st.markdown("**Pending requirements:**")
-        for sec, pending in r["pending_sections"].items():
-            # clean up section title spacing around hyphens
-            sec_clean = re.sub(r"\s*-\s*", " - ", sec).strip()
-            lower = sec_clean.lower()
-            # handle choose sections specially
-            if "choose" in lower:
-                # parse required number
-                m = re.search(r"choose\s+(\d+)", lower)
-                req = int(m.group(1)) if m else 1
-                # calculate how many selected (req - remaining)
-                taken_here = req - len(pending)
-                remaining = req - taken_here
-                # skip if fully satisfied
-                if remaining <= 0:
-                    continue
-                # display slots remaining options and pending list (formatted LETTER SPACE NUMBER)
-                pending_fmt = [
-                    re.sub(r"([A-Za-z]+)(\d+)", r"\1 \2", c) for c in pending
-                ]
-                st.write(
-                    f"**{sec_clean} – {remaining} remaining options:** {', '.join(pending_fmt)}"
-                )
+        sections_dict = r["sections"]
+        pending_map = r["pending_sections"]
+        # exclude navigation-like sections
+        nav_prefixes = ("communication", "campus", "services", "other")
+        # base sections (A-C)
+        base_keys = [
+            k
+            for k in sections_dict
+            if not any(k.strip().lower().startswith(n) for n in nav_prefixes)
+            and not k.strip().lower().startswith("d.")
+        ]
+        # hide parent C if C.1/C.2 subsections exist
+        c_keys = [k for k in sections_dict if k.strip().lower().startswith("c.")]
+        # identify C subsections
+        c1 = next((k for k in c_keys if re.match(r"c\.\s*1", k.strip().lower())), None)
+        c2 = next((k for k in c_keys if re.match(r"c\.\s*2", k.strip().lower())), None)
+        parent_c = next((k for k in c_keys if k not in (c1, c2)), None)
+        if parent_c and (c1 or c2):
+            base_keys = [k for k in base_keys if k != parent_c]
+        # detect D sections: parent header and subsections D.1, D.2
+        d_keys = [k for k in sections_dict if k.strip().lower().startswith("d.")]
+        d1 = next((k for k in d_keys if re.match(r"d\.\s*1", k.strip().lower())), None)
+        d2 = next((k for k in d_keys if re.match(r"d\.\s*2", k.strip().lower())), None)
+        parent_d = next((k for k in d_keys if k not in (d1, d2)), None)
+        # decide which D sections to display
+        d_display = []
+        if parent_d and (d1 or d2):
+            # Option parent: show both until one completed, then collapse to parent only
+            done1 = bool(d1 and pending_map.get(d1) == [])
+            done2 = bool(d2 and pending_map.get(d2) == [])
+            if not (done1 or done2):
+                # neither option complete: show both subsections
+                d_display = [sec for sec in (d1, d2) if sec]
             else:
-                # required section
-                if pending:
-                    pending_fmt = [
-                        re.sub(r"([A-Za-z]+)(\d+)", r"\1 \2", c) for c in pending
-                    ]
-                    st.markdown(f"**{sec_clean}:** {', '.join(pending_fmt)}")
+                # collapse into parent: mark parent completed and hide subsections
+                pending_map[parent_d] = []
+                if d1:
+                    pending_map.pop(d1, None)
+                if d2:
+                    pending_map.pop(d2, None)
+                d_display = [parent_d]
+        elif parent_d:
+            # non-option parent: show only parent D
+            d_display = [parent_d]
+
+        # combine, sort, and render sections
+        def sort_key(k):
+            m = re.match(r"^([A-Z])\.\s*(\d+)?", k)
+            if m:
+                return (ord(m.group(1)), int(m.group(2)) if m.group(2) else 0)
+            return (ord(k[0]) if k else 999, 0)
+
+        ordered = sorted(base_keys + d_display, key=sort_key)
+
+        # render sections
+        for sec in ordered:
+            label = re.sub(r"\s*[--]\s*", " - ", sec).strip()
+            pend = pending_map.get(sec)
+            if isinstance(pend, int):
+                st.markdown(f"**{label}:** {pend} remaining courses")
+            elif pend is None:
+                st.markdown(f"**{label}:** manual")
+            elif not pend:
+                st.markdown(f"**{label}:** All completed")
+            else:
+                opts = [re.sub(r"([A-ZaZ]+)(\d+)", r"\1 \2", c) for c in pend]
+                if re.search(r"choose", label.lower()) or re.search(
+                    r"\(\d+ credits?\)", label, re.IGNORECASE
+                ):
+                    m = re.search(r"\((\d+)", sec)
+                    req = int(m.group(1)) // 3 if m else len(opts)
+                    taken = req - len(pend)
+                    rem = req - taken
+                    st.markdown(
+                        f"**{label} - {rem} remaining options:** {', '.join(opts)}"
+                    )
                 else:
-                    st.markdown(f"**{sec_clean}:** All completed")
-        st.markdown("---")  # end of minor
+                    st.markdown(f"**{label}:** {', '.join(opts)}")
+        # render separator and/or notes combined to avoid extra break
+        notes = r.get("notes", [])
+        if notes:
+            # clean note text and ensure 'NOT overlap' has proper space
+            cleaned = []
+            for n in notes:
+                txt = re.sub(r"^[\*\^]+\s*", "", n)
+                # fix missing space in 'NOT overlap'
+                txt = re.sub(r"NOT\s*overlap", "NOT overlap", txt, flags=re.IGNORECASE)
+                cleaned.append(txt)
+            # render only the Notes label and list without extra lines
+            notes_html = '<div style="margin:0;padding:0">'
+            notes_html += '<p style="margin:0;"><strong>Notes:</strong></p>'
+            notes_html += '<ul style="margin:0;padding-left:1.25em;">'
+            for cn in cleaned:
+                notes_html += f'<li style="margin:0">{cn}</li>'
+            notes_html += "</ul></div>"
+            st.markdown(notes_html, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
