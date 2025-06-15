@@ -14,6 +14,8 @@ st.set_page_config(
     page_icon="🎓",
     menu_items={
         "About": (
+            "**Purdue University Minor Optimizer**  \n"
+            "v0.1.0  \n\n"
             "**Arnav Sivakumar**  \n"
             "CS Student @ Purdue University  \n\n"
             "Made this app to explore optimizing overlapping minors and for fun.  \n\n"
@@ -52,7 +54,7 @@ def main():
     st.write(
         "Enter your completed courses and current semester to find the best minors you can pursue based on overlap and remaining requirements.\n\n"
         "This app is an open source project by Arnav Sivakumar, a CS student at Purdue University. It uses the [Purdue Course Catalog](https://catalog.purdue.edu/) to scrape minor requirements and compute recommendations based on your completed coursework.\n\n"
-        "It is still in development, so please report any issues or suggestions on the [GitHub repository](https://github.com/arnavsiva/Purdue-University-Minor-Optimizer)"
+        "**Important:** This app has been tested with my courses and credits, but with over 100 Purdue minors, not everything has been fully tested. Please check the official Purdue minor page for each recommendation to ensure accuracy. If you find any issues or have suggestions, please report them on the [GitHub repository](https://github.com/arnavsiva/Purdue-University-Minor-Optimizer)."
     )
 
     # Sidebar - user information input and course management
