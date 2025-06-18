@@ -18,7 +18,7 @@ A Streamlit application that recommends Purdue University minors based on your c
 
 1. Clone the repository:
    ```powershell
-   git clone https://github.com/arnavsiva/Purdue-University-Minor-Optimizer
+   git clone https://github.com/arnavsiva/Purdue-University-Minor-Optimizer.git
    ```
 
 2. Install dependencies:
