@@ -1,8 +1,20 @@
 import math
 import re
+import os
+import sys
 
 import streamlit as st
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
+from optimizer import (
+    clean_notes,
+    format_course,
+    major_restriction_applies,
+    residency_requirement,
+    section_blocks_to_result,
+    sort_minor_results,
+    summarize_minor,
+)
 from scraper import (
     _get_requirements_from_minor_page,
     get_majors_list,
@@ -15,7 +27,7 @@ st.set_page_config(
     menu_items={
         "About": (
             "**Purdue University Minor Optimizer**  \n"
-            "v0.1.0  \n\n"
+            "v0.2.0  \n\n"
             "**Arnav Sivakumar**  \n"
             "CS Student @ Purdue University  \n\n"
             "Made this app to explore optimizing overlapping minors and for fun.  \n\n"
@@ -59,7 +71,7 @@ def main():
 
     # Sidebar - user information input and course management
     st.sidebar.header("Your Information")
-    # select current major (to avoid recommending the same minor)
+    # select current major (used only for explicit catalog restrictions)
     majors = get_majors_list()
     major_options = ["None"] + majors
     if "major" not in st.session_state:
@@ -220,6 +232,135 @@ def main():
         )
         return
 
+    st.markdown(
+        """
+        <style>
+        .boilerplate-wrap {
+            margin-top: 0.75rem;
+        }
+        .rank-rail {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.75rem;
+            margin: 0.75rem 0 1.5rem 0;
+        }
+        .rank-card {
+            border-radius: 18px;
+            padding: 0.9rem 1rem;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+            box-shadow: 0 12px 30px rgba(0,0,0,0.18);
+        }
+        .rank-card.active {
+            border-color: rgba(255,184,0,0.6);
+            box-shadow: 0 18px 36px rgba(255,184,0,0.18);
+        }
+        .rank-num {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            opacity: 0.75;
+        }
+        .rank-title {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-top: 0.35rem;
+        }
+        .rank-sub {
+            font-size: 0.88rem;
+            opacity: 0.75;
+            margin-top: 0.25rem;
+        }
+        .minor-card {
+            border-radius: 28px;
+            padding: 1.5rem;
+            background: radial-gradient(circle at top right, rgba(255,184,0,0.16), transparent 28%),
+                        linear-gradient(180deg, rgba(20,20,20,0.96), rgba(8,8,8,0.98));
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+            margin: 0.5rem 0 1rem 0;
+        }
+        .minor-card h2 {
+            margin: 0;
+            color: #fff;
+            font-size: 2rem;
+            line-height: 1.15;
+        }
+        .minor-card .meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.85rem;
+            margin-bottom: 0.8rem;
+        }
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.35rem 0.7rem;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.08);
+            color: #fff;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .pill.gold { background: rgba(255,184,0,0.18); color: #ffd77a; }
+        .pill.green { background: rgba(90,200,120,0.18); color: #8ef0ae; }
+        .pill.blue { background: rgba(90,155,255,0.18); color: #9fc3ff; }
+        .progress-shell {
+            width: 100%;
+            height: 12px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.08);
+            overflow: hidden;
+            margin: 0.75rem 0 1rem 0;
+        }
+        .progress-fill {
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #ffb800, #ffd77a);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
+            margin-top: 0.8rem;
+            margin-bottom: 1rem;
+        }
+        .stat-card {
+            border-radius: 18px;
+            padding: 0.9rem 1rem;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .stat-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            opacity: 0.65;
+        }
+        .stat-value {
+            font-size: 1.35rem;
+            font-weight: 800;
+            margin-top: 0.2rem;
+            color: #fff;
+        }
+        .section-card {
+            border-radius: 18px;
+            padding: 0.9rem 1rem;
+            margin: 0.6rem 0;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .section-card.complete { border-color: rgba(90,200,120,0.35); }
+        .section-card.partial { border-color: rgba(255,184,0,0.35); }
+        .section-card.manual { border-color: rgba(120,160,255,0.35); }
+        .section-title { font-weight: 700; color: #fff; }
+        .section-detail { margin-top: 0.35rem; opacity: 0.88; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     # proceed once optimization triggered
     with st.spinner("Loading minor requirements..."):
         status = st.empty()
@@ -227,370 +368,181 @@ def main():
         for name, link in get_minor_list():
             status.text(f"Loading requirements for {name}...")
             try:
-                sections, notes = _get_requirements_from_minor_page(link)
+                sections, notes, restriction_text = _get_requirements_from_minor_page(link)
             except Exception:
-                sections, notes = {}, []
+                sections, notes, restriction_text = [], [], ""
             minors_data.append(
-                {"name": name, "link": link, "sections": sections, "notes": notes}
-            )
-        status.empty()
-
-    # compute recommendations
-    with st.spinner("Computing top recommendations..."):
-        status = st.empty()
-        results = []
-        for minor in minors_data:
-            name = minor["name"]
-            # derive department prefix (first 4 letters) for level-based logic
-            dept_prefix = name.split()[0][:4].upper()
-            link = minor["link"]
-            status.text(f"Checking {name} minor...")
-            sections = minor["sections"]
-            notes = minor.get("notes", [])
-            # calculate per-section requirements
-            # flatten codes (including nested OR groups) into a single list
-            raw_codes = []
-            for codes in sections.values():
-                if isinstance(codes, list) and codes and isinstance(codes[0], list):
-                    for group in codes:
-                        raw_codes.extend(group)
-                else:
-                    raw_codes.extend(codes)
-            # filter to valid course codes only (exclude descriptive text)
-            import re as _re
-
-            code_pattern = _re.compile(r"^[A-Z]{2,4}\d{3,5}$")
-            total_req = 0
-            completed_req = 0
-            taken_codes = []
-            # iterate each section to compute required selections
-            for sec, codes_list in sections.items():
-                # filter valid course codes
-                sec_codes = [c for c in codes_list if code_pattern.match(c)]
-                # handle level-based requirements: count courses taken at/above level threshold
-                if "level" in sec.lower():
-                    # parse level threshold and credits
-                    m_thr = re.search(r"(\d+)\s*Level", sec, re.IGNORECASE)
-                    level_threshold = int(m_thr.group(1)) if m_thr else 0
-                    m_cred = re.search(r"\((\d+)\s+credits?", sec, re.IGNORECASE)
-                    credits = int(m_cred.group(1)) if m_cred else 0
-                    req_level = max(1, credits // 3)
-                    total_req += req_level
-                    # count taken courses for this minor’s department at or above threshold
-                    taken_level = 0
-                    for c in taken:
-                        if c.startswith(dept_prefix):
-                            num = int(re.match(r"[A-Za-z]+(\d+)", c).group(1))
-                            if num >= level_threshold:
-                                taken_level += 1
-                                taken_codes.append(c)
-                    completed_req += min(taken_level, req_level)
-                    continue
-                if not sec_codes:
-                    continue  # skip sections without actual course codes
-                lower = sec.lower()
-                # determine number of selections required
-                if "choose" in lower:
-                    m = re.search(r"choose\s+(\d+)", lower)
-                    if m:
-                        req = int(m.group(1))
-                    else:
-                        # fallback to credit parsing
-                        m2 = re.search(
-                            r"\((\d+)(?:-\d+)?\s+credits?", sec, re.IGNORECASE
-                        )
-                        credits = int(m2.group(1)) if m2 else 3
-                        req = max(1, credits // 3)
-                else:
-                    # parse credit parentheses for mandatory sections
-                    m3 = re.search(r"\((\d+)(?:-\d+)?\s+credits?", sec, re.IGNORECASE)
-                    if m3:
-                        credits = int(m3.group(1))
-                        req = max(1, credits // 3)
-                    else:
-                        # default: need all listed courses
-                        req = len(sec_codes)
-                # count how many taken in this section
-                taken_in_sec = len(set(sec_codes) & taken)
-                # accumulate
-                total_req += req
-                completed_req += min(taken_in_sec, req)
-                # collect taken codes overall
-                taken_codes.extend(set(sec_codes) & taken)
-            if total_req == 0:
-                continue
-            # skip minors with no completed courses
-            if completed_req == 0:
-                continue
-            completed = completed_req
-            total = total_req
-            percent = (completed / total) * 100
-            # compute pending courses per section, disallow reusing chosen courses for multiple choose-one sections
-            available_taken = set(taken_codes)
-            pending_sections = {}
-            for sec, codes in sections.items():
-                # normalize section title
-                lower = sec.lower()
-                # level-based requirements (e.g., “20000 Level or Above”): compute remaining courses
-                if "level" in lower:
-                    # parse level threshold and credits
-                    m_lvl = re.search(r"(\d+)\s*Level", sec, re.IGNORECASE)
-                    level_threshold = int(m_lvl.group(1)) if m_lvl else 20000
-                    m_cred = re.search(r"\((\d+)\s+credits?", sec, re.IGNORECASE)
-                    credits = int(m_cred.group(1)) if m_cred else 0
-                    req_cnt = max(1, credits // 3)
-                    # count taken courses for this department at or above threshold
-                    taken_level = sum(
-                        1
-                        for c in taken
-                        if c.startswith(dept_prefix)
-                        and int(re.match(r"[A-Za-z]+(\d+)", c).group(1))
-                        >= level_threshold
-                    )
-                    remaining = max(0, req_cnt - taken_level)
-                    pending_sections[sec] = remaining
-                    continue
-                # descriptive or instruction-only sections (no course codes)
-                if not codes or all(not code_pattern.match(c) for c in codes):
-                    pending_sections[sec] = None
-                    continue
-                # treat explicit 'choose' or credit-based requirements as choose-X
-                if "choose" in lower or re.search(
-                    r"\(\d+\s+credits", sec, re.IGNORECASE
-                ):
-                    # parse how many courses to select
-                    m = re.search(r"choose\s+(\d+)", lower)
-                    if m:
-                        req = int(m.group(1))
-                    else:
-                        # try word numbers e.g. 'choose two'
-                        m2 = re.search(r"choose\s+(one|two|three|four|five)", lower)
-                        word_map = {
-                            "one": 1,
-                            "two": 2,
-                            "three": 3,
-                            "four": 4,
-                            "five": 5,
-                        }
-                        req = word_map.get(m2.group(1), 1) if m2 else None
-                    if req is None:
-                        # fallback: use credits in parentheses / 3
-                        m3 = re.search(r"\((\d+)\s+credits", sec, re.IGNORECASE)
-                        credits = int(m3.group(1)) if m3 else 3
-                        req = max(1, credits // 3)
-                    # prepare set of valid codes for this section, excluding placeholder codes ending in '000'
-                    codes_set = set(
-                        [
-                            c
-                            for c in codes
-                            if code_pattern.match(c) and not c.endswith("0000")
-                        ]
-                    )
-                    chosen_list = list(available_taken & codes_set)
-                    # consume only up to the required number, leave extras for D.1
-                    for sel in chosen_list[:req]:
-                        available_taken.discard(sel)
-                    if len(chosen_list) >= req:
-                        # section fully satisfied
-                        pending_sections[sec] = []
-                    else:
-                        # still need to pick courses: list remaining options
-                        pending_sections[sec] = [
-                            c
-                            for c in codes
-                            if c not in taken and not c.endswith("0000")
-                        ]
-                else:
-                    # standard section: pending are those not taken
-                    pending_sections[sec] = [
-                        c for c in codes if c not in taken and not c.endswith("0000")
-                    ]
-            # special-case Additional Course from Section B or C (D.1)
-            for sec, codes in sections.items():
-                if sec.strip().startswith("D. 1."):
-                    # choose-1 additional course from Section B or top-level C
-                    bc_codes = []
-                    for k, opts in sections.items():
-                        if k.startswith("B.") or (
-                            k.startswith("C.") and not re.match(r"C\.\s*\d", k)
-                        ):
-                            bc_codes.extend([c for c in opts if code_pattern.match(c)])
-                    # treat as a 'choose 1' from B/C using any remaining available_taken
-                    chosen = set(bc_codes) & available_taken
-                    if chosen:
-                        pending_sections[sec] = []
-                    else:
-                        # list all options not yet taken
-                        pending_sections[sec] = [c for c in bc_codes if c not in taken]
-                    continue
-            # special-case International Experience (D.2)
-            for sec, codes in sections.items():
-                if sec.strip().startswith("D. 2."):
-                    # separate explicit course codes and descriptive options
-                    explicit_codes = [c for c in codes if code_pattern.match(c)]
-                    descriptive = [c for c in codes if not code_pattern.match(c)]
-                    # start with unmet explicit codes
-                    pending = [c for c in explicit_codes if c not in taken]
-                    # include descriptive options if user hasn't covered experience
-                    if not (
-                        st.session_state.get("study_abroad")
-                        or st.session_state.get("intl_internship")
-                    ):
-                        pending.extend(descriptive)
-                    pending_sections[sec] = pending
-                    continue
-            results.append(
                 {
                     "name": name,
                     "link": link,
-                    "taken_codes": taken_codes,
-                    "pending_sections": pending_sections,
                     "sections": sections,
                     "notes": notes,
-                    "total": total,
-                    "completed": completed,
-                    "percent": percent,
+                    "restriction_text": restriction_text,
                 }
             )
         status.empty()
 
-    # filter out any minor matching the user's current major
-    if st.session_state.get("major") and st.session_state.major != "None":
-        filter_name = f"{st.session_state.major} Minor"
-        results = [r for r in results if r["name"] != filter_name]
-    # sort by number of courses completed desc
-    results = sorted(results, key=lambda x: x["percent"], reverse=True)
+    with st.spinner("Computing top recommendations..."):
+        status = st.empty()
+        results = []
+        skipped_minors = []
+        for minor in minors_data:
+            status.text(f"Checking {minor['name']} minor...")
+            if major_restriction_applies(st.session_state.get("major"), minor.get("restriction_text", "")):
+                skipped_minors.append(minor["name"])
+                continue
+
+            summary = summarize_minor(minor, taken, st.session_state.get("major"))
+            if summary is not None:
+                results.append(summary)
+        status.empty()
+
+    if skipped_minors:
+        st.info(
+            "Some minors were excluded because the selected major matches an explicit catalog restriction: "
+            + ", ".join(sorted(skipped_minors))
+        )
+
+    results = sort_minor_results(results)
 
     if not results:
         st.info("No minors found with requirements.")
         return
 
     st.subheader("Recommended Minors")
-    st.write(f"{len(results)} minors match your completed coursework:")
+    st.caption(f"{len(results)} minors match your completed coursework. Rank 1 is the closest match.")
 
-    for r in results:
-        st.markdown("---")  # separator before minor header
-        st.markdown(f"### {r['name']}")
-        st.markdown(f"[View catalog page]({r['link']})  ")  # two spaces for newline
-        # Display progress immediately after catalog link
-        st.markdown(
-            f"**Progress:** {r['completed']} / {r['total']} courses completed ({r['percent']:.1f}%)"
-        )
-        # Purdue residency requirement
-        req_pcnt = None
-        for note in notes:
-            m = re.search(r"(\d+)%", note)
-            if m:
-                req_pcnt = int(m.group(1))
-                break
-        if req_pcnt:
-            req_courses = math.ceil(r["total"] * req_pcnt / 100)
-            allowed_ext = r["total"] - req_courses
+    preview_count = min(3, len(results))
+    preview_cols = st.columns(preview_count)
+    for idx, (col, result) in enumerate(zip(preview_cols, results[:preview_count]), start=1):
+        with col:
+            active_class = " active" if idx == 1 else ""
             st.markdown(
-                f"**Residency requirement:** At least {req_courses}/{r['total']} courses at Purdue ({req_pcnt}%), up to {allowed_ext} external."
+                f"""
+                <div class="rank-card{active_class}">
+                    <div class="rank-num">Rank {idx}</div>
+                    <div class="rank-title">{result['name']}</div>
+                    <div class="rank-sub">{result['percent']:.1f}% complete</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
-        # show courses already taken
-        taken_fmt = [re.sub(r"([A-Za-z]+)(\d+)", r"\1 \2", c) for c in r["taken_codes"]]
-        st.markdown("**Courses already taken:**\n- " + "\n- ".join(taken_fmt))
-        # pending requirements
-        st.markdown("**Pending requirements:**")
-        sections_dict = r["sections"]
-        pending_map = r["pending_sections"]
-        # exclude navigation-like sections
-        nav_prefixes = ("communication", "campus", "services", "other")
-        # base sections (A-C)
-        base_keys = [
-            k
-            for k in sections_dict
-            if not any(k.strip().lower().startswith(n) for n in nav_prefixes)
-            and not k.strip().lower().startswith("d.")
-        ]
-        # hide parent C if C.1/C.2 subsections exist
-        c_keys = [k for k in sections_dict if k.strip().lower().startswith("c.")]
-        # identify C subsections
-        c1 = next((k for k in c_keys if re.match(r"c\.\s*1", k.strip().lower())), None)
-        c2 = next((k for k in c_keys if re.match(r"c\.\s*2", k.strip().lower())), None)
-        parent_c = next((k for k in c_keys if k not in (c1, c2)), None)
-        if parent_c and (c1 or c2):
-            base_keys = [k for k in base_keys if k != parent_c]
-        # detect D sections: parent header and subsections D.1, D.2
-        d_keys = [k for k in sections_dict if k.strip().lower().startswith("d.")]
-        d1 = next((k for k in d_keys if re.match(r"d\.\s*1", k.strip().lower())), None)
-        d2 = next((k for k in d_keys if re.match(r"d\.\s*2", k.strip().lower())), None)
-        parent_d = next((k for k in d_keys if k not in (d1, d2)), None)
-        # decide which D sections to display
-        d_display = []
-        if parent_d and (d1 or d2):
-            # Option parent: show both until one completed, then collapse to parent only
-            done1 = bool(d1 and pending_map.get(d1) == [])
-            done2 = bool(d2 and pending_map.get(d2) == [])
-            if not (done1 or done2):
-                # neither option complete: show both subsections
-                d_display = [sec for sec in (d1, d2) if sec]
-            else:
-                # collapse into parent: mark parent completed and hide subsections
-                pending_map[parent_d] = []
-                if d1:
-                    pending_map.pop(d1, None)
-                if d2:
-                    pending_map.pop(d2, None)
-                d_display = [parent_d]
-        elif parent_d:
-            # non-option parent: show only parent D
-            d_display = [parent_d]
 
-        # combine, sort, and render sections
-        def sort_key(k):
-            m = re.match(r"^([A-Z])\.\s*(\d+)?", k)
-            if m:
-                return (ord(m.group(1)), int(m.group(2)) if m.group(2) else 0)
-            return (ord(k[0]) if k else 999, 0)
+    selected_rank = st.slider(
+        "Browse ranked minors",
+        min_value=1,
+        max_value=len(results),
+        value=1,
+        help="Rank 1 is the closest completion match.",
+    )
+    selected = results[selected_rank - 1]
+    notes = selected.get("notes", [])
+    residency = residency_requirement(selected["total"], notes)
 
-        ordered = sorted(base_keys + d_display, key=sort_key)
+    st.markdown(
+        f"""
+        <div class="minor-card">
+            <div class="meta-row">
+                <span class="pill gold">Rank #{selected_rank}</span>
+                <span class="pill green">{selected['percent']:.1f}% complete</span>
+                <span class="pill blue">{selected['completed']} of {selected['total']} courses</span>
+            </div>
+            <h2>{selected['name']}</h2>
+            <div class="progress-shell"><div class="progress-fill" style="width:{selected['percent']:.1f}%"></div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        # render sections
-        for sec in ordered:
-            label = re.sub(r"\s*[--]\s*", " - ", sec).strip()
-            pend = pending_map.get(sec)
-            if isinstance(pend, int):
-                st.markdown(f"**{label}:** {pend} remaining courses")
-            elif pend is None:
-                st.markdown(f"**{label}:** manual")
-            elif not pend:
-                st.markdown(f"**{label}:** All completed")
-            else:
-                opts = [re.sub(r"([A-ZaZ]+)(\d+)", r"\1 \2", c) for c in pend]
-                if re.search(r"choose", label.lower()) or re.search(
-                    r"\(\d+ credits?\)", label, re.IGNORECASE
-                ):
-                    m = re.search(r"\((\d+)", sec)
-                    req = int(m.group(1)) // 3 if m else len(opts)
-                    taken = req - len(pend)
-                    rem = req - taken
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Progress", f"{selected['percent']:.1f}%")
+    with c2:
+        st.metric("Completed", f"{selected['completed']} / {selected['total']}")
+    with c3:
+        st.metric("Taken courses", len(selected['taken_codes']))
+
+    st.markdown(f"[View catalog page]({selected['link']})")
+
+    if residency:
+        req_pcnt, req_courses, allowed_ext = residency
+        st.info(
+            f"Residency requirement: at least {req_courses}/{selected['total']} courses at Purdue ({req_pcnt}%), up to {allowed_ext} external."
+        )
+
+    c_left, c_right = st.columns([1.05, 0.95])
+    with c_left:
+        st.markdown("**Courses already taken**")
+        if selected["taken_codes"]:
+            chips = " ".join(
+                f'<span class="pill">{format_course(code)}</span>' for code in selected["taken_codes"]
+            )
+            st.markdown(chips, unsafe_allow_html=True)
+        else:
+            st.caption("No completed courses overlap this minor yet.")
+
+    with c_right:
+        st.markdown("**What is left**")
+        st.caption("Open any section below for a compact breakdown.")
+
+    st.markdown("**Requirement breakdown**")
+    for section_result in selected["section_results"]:
+        if section_result["kind"] == "manual":
+            status_label = "Manual"
+            status_class = "manual"
+        else:
+            status_label = f"{section_result['completed']} / {section_result['total']}"
+            status_class = "complete" if section_result["completed"] >= section_result["total"] else "partial"
+
+        st.markdown(
+            f"""
+            <div class="section-card {status_class}">
+                <div class="section-title">{section_result['title']}</div>
+                <div class="section-detail">Status: {status_label}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        with st.expander(section_result["title"], expanded=section_result["completed"] < section_result["total"]):
+            if section_result["kind"] == "manual":
+                st.write(section_result.get("description", ""))
+            elif section_result["kind"] == "pool":
+                remaining = section_result.get("remaining_options", [])
+                if remaining:
+                    st.write("Options still available:")
                     st.markdown(
-                        f"**{label} - {rem} remaining options:** {', '.join(opts)}"
+                        " ".join(
+                            f'<span class="pill">{format_course(code)}</span>' for code in remaining
+                        ),
+                        unsafe_allow_html=True,
                     )
+                if section_result.get("children"):
+                    st.write("Grouped options:")
+                    for child in section_result["children"]:
+                        child_codes = child.get("codes", []) or child.get("options", [])
+                        if child_codes:
+                            st.write(f"- {child.get('title', 'Option')}: {', '.join(format_course(code) for code in child_codes)}")
+            else:
+                pending_groups = section_result.get("pending_groups", [])
+                if pending_groups:
+                    for group in pending_groups:
+                        options = group.get("options", [])
+                        missing = group.get("missing", [])
+                        if options:
+                            st.write(f"- {', '.join(format_course(code) for code in options)}")
+                        elif missing:
+                            st.write(f"- {', '.join(format_course(code) for code in missing)}")
                 else:
-                    st.markdown(f"**{label}:** {', '.join(opts)}")
-        # render separator and/or notes combined to avoid extra break
-        notes = r.get("notes", [])
-        if notes:
-            # clean note text and ensure 'NOT overlap' has proper space
-            cleaned = []
-            for n in notes:
-                txt = re.sub(r"^[\*\^]+\s*", "", n)
-                # fix missing space in 'NOT overlap'
-                txt = re.sub(r"NOT\s*overlap", "NOT overlap", txt, flags=re.IGNORECASE)
-                cleaned.append(txt)
-            # render only the Notes label and list without extra lines
-            notes_html = '<div style="margin:0;padding:0">'
-            notes_html += '<p style="margin:0;"><strong>Notes:</strong></p>'
-            notes_html += '<ul style="margin:0;padding-left:1.25em;">'
-            for cn in cleaned:
-                notes_html += f'<li style="margin:0">{cn}</li>'
-            notes_html += "</ul></div>"
-            st.markdown(notes_html, unsafe_allow_html=True)
+                    st.write("All grouped options are satisfied.")
+
+    if notes:
+        with st.expander("Notes", expanded=False):
+            for cn in clean_notes(notes):
+                st.write(f"- {cn}")
 
 
 if __name__ == "__main__":
+    if get_script_run_ctx() is None:
+        os.execvp("streamlit", ["streamlit", "run", sys.argv[0], *sys.argv[1:]])
     main()
