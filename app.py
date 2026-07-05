@@ -62,7 +62,7 @@ def main():
         st.session_state.clear_input = False
         st.session_state.clear_external = False
 
-    st.title("Purdue Minor Recommender v0.1.0")
+    st.title("Purdue Minor Recommender v0.2.0")
     st.write(
         "Enter your completed courses and current semester to find the best minors you can pursue based on overlap and remaining requirements.\n\n"
         "This app is an open source project by Arnav Sivakumar, a CS student at Purdue University. It uses the [Purdue Course Catalog](https://catalog.purdue.edu/) to scrape minor requirements and compute recommendations based on your completed coursework.\n\n"
